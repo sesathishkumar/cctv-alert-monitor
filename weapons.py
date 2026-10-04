@@ -7,12 +7,15 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / 'models' / 'weapons.onnx'
+DEFAULT_MANIFEST_PATH = Path(__file__).resolve().parent / 'models' / 'weapons.json'
 
 def model_settings():
-    model = os.environ.get('WEAPON_MODEL_PATH')
-    manifest = os.environ.get('WEAPON_MANIFEST_PATH')
-    if not model or not manifest:
-        raise ValueError('Weapon detection requires WEAPON_MODEL_PATH and WEAPON_MANIFEST_PATH.')
+    model = os.environ.get('WEAPON_MODEL_PATH') or DEFAULT_MODEL_PATH
+    manifest = os.environ.get('WEAPON_MANIFEST_PATH') or DEFAULT_MANIFEST_PATH
+    if not Path(model).is_file() or not Path(manifest).is_file():
+        raise ValueError('Weapon model is missing. Run scripts/download_weapon_model.py '
+                         'or configure WEAPON_MODEL_PATH and WEAPON_MANIFEST_PATH.')
     config = json.loads(Path(manifest).read_text())
     if not isinstance(config, dict):
         raise ValueError('Weapon manifest must be a JSON object.')

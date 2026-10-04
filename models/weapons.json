@@ -1,0 +1,19 @@
+{
+  "format": "yolov8-detection-onnx",
+  "input_size": 640,
+  "sha256": "910d724547692ff4ba75ff4f335b0e72344c2b5382bbbd5ab08e9ba4cc3dfc0b",
+  "classes": [
+    {
+      "label": "guns",
+      "category": "gun"
+    },
+    {
+      "label": "knife",
+      "category": "knife"
+    }
+  ],
+  "source": "https://github.com/JoaoAssalim/Weapons-and-Knives-Detector-with-YOLOv8",
+  "upstream_commit": "3d641e6001abdaa1afa3cd45d0fe02a9554f3d0e",
+  "upstream_path": "models/normal.onnx",
+  "model_metadata_license": "AGPL-3.0 https://ultralytics.com/license"
+}

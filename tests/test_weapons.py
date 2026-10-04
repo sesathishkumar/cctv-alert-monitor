@@ -78,7 +78,10 @@ def test_manifest_requires_both_classes_and_checksum(tmp_path, monkeypatch):
         model_settings()
 
 
-def test_unconfigured_mode_is_explicitly_unavailable(client, monkeypatch):
+def test_unconfigured_mode_is_explicitly_unavailable(client, monkeypatch, tmp_path):
+    import weapons
+    monkeypatch.setattr(weapons, 'DEFAULT_MODEL_PATH', tmp_path / 'missing.onnx')
+    monkeypatch.setattr(weapons, 'DEFAULT_MANIFEST_PATH', tmp_path / 'missing.json')
     monkeypatch.delenv('WEAPON_MODEL_PATH', raising=False)
     monkeypatch.delenv('WEAPON_MANIFEST_PATH', raising=False)
     response = client.get('/api/capabilities')

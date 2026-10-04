@@ -44,7 +44,26 @@ This version processes one demo or uploaded video at a time. It has no RTSP inpu
 
 Weapon mode supports separate **possible gun** and **possible knife** alerts, annotated bounding boxes, model confidence scores, per-category duration and cooldown, evidence and acknowledgment. It runs independently of motion, so a stationary visible weapon can be detected. A weapon's bounding-box center must lie inside the configured zone. This identifies visible objects; it does not associate a weapon with a particular person or establish that someone is carrying it. Violence detection is not implemented.
 
-**No trained weapon model is installed.** Model download access was rejected by the model-hosting service. The dashboard disables weapon mode and the API rejects weapon-mode startup until a model is configured. Motion mode remains available. Parser and alert-handling tests use fixtures; they do not validate real weapon recognition or model accuracy.
+A compatible pretrained model is now configured from the GitHub source supplied by the user. Its embedded classes are `guns` and `knife`. Install the pinned, checksum-verified weights after cloning:
+
+```sh
+.venv/bin/python scripts/download_weapon_model.py
+```
+
+Then launch `app.py` normally; the bundled manifest and local model paths are used automatically. The weights are excluded from Git. Their model metadata declares AGPL-3.0, while upstream's LICENSE is GPL-3.0 and its README incorrectly claims MIT. Read `models/NOTICE.md` before deployment or redistribution.
+
+For Windows PowerShell with Python 3.12 installed, from the extracted project folder:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe scripts\download_weapon_model.py
+.\.venv\Scripts\python.exe app.py
+```
+
+Choose **Possible guns + knives** in the dashboard and upload your video. Detection still requires reviewing each alert. The synthetic demo contains a moving rectangle, not weapons, so it is useful for motion mode only.
+
+Actual OpenCV inference has detected both categories in upstream demonstration/training images. Those checks are not independent accuracy evaluation on CCTV footage. Fixture-based parser and alert tests remain separate from real-model checks. If weights are absent, weapon mode is disabled until downloaded.
 
 Supply a legally usable YOLOv8 **detection** model trained with both guns and knives, exported as a static square-input ONNX model without embedded NMS. The required output is `[1, 4 + class_count, prediction_count]`, with center-x, center-y, width, height in input-image pixels and per-class scores. Models with objectness channels, end-to-end NMS, or other output layouts need a different adapter. OpenCV must support the model's exported operators.
 
