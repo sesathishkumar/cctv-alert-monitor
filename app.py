@@ -12,6 +12,7 @@ from flask import Flask, Response, jsonify, render_template, request, send_from_
 
 from detector import MotionDetector
 from weapons import WeaponDetector, model_settings
+from violence import ViolenceDetector, violence_settings
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / 'data'
@@ -33,12 +34,31 @@ def initialize_database():
         db.execute('CREATE TABLE IF NOT EXISTS alerts (id TEXT PRIMARY KEY, created TEXT, '
                    'source TEXT, event TEXT, evidence TEXT, acknowledged INTEGER DEFAULT 0)')
         columns = {row['name'] for row in db.execute('PRAGMA table_info(alerts)')}
-        for name, sql_type in [('category', 'TEXT'), ('confidence', 'REAL')]:
+        for name, sql_type in [('category', 'TEXT'), ('confidence', 'REAL'), ('clip', 'TEXT'),
+                               ('clip_start', 'REAL'), ('clip_end', 'REAL')]:
             if name not in columns:
                 db.execute(f'ALTER TABLE alerts ADD COLUMN {name} {sql_type}')
 
 
 initialize_database()
+
+
+class CombinedDetector:
+    def __init__(self, **settings):
+        self.weapons = WeaponDetector(**settings)
+        self.violence = ViolenceDetector(**settings)
+
+    @property
+    def evaluations(self):
+        return self.violence.evaluations
+
+    def process(self, frame, timestamp):
+        annotated, weapon_events, weapon_count = self.weapons.process(frame, timestamp)
+        _, fight_events, fight_count = self.violence.process(frame, timestamp)
+        if self.violence.score is not None:
+            cv2.putText(annotated, f'Fighting model score: {self.violence.score:.2f}',
+                        (12, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 210, 230), 2)
+        return annotated, weapon_events + fight_events, weapon_count + fight_count
 
 
 class Monitor:
@@ -74,7 +94,9 @@ class Monitor:
         capture = None
         try:
             mode = settings.pop('mode', 'motion')
-            detector = WeaponDetector(**settings) if mode == 'weapons' else MotionDetector(**settings)
+            detector_class = {'motion': MotionDetector, 'weapons': WeaponDetector,
+                              'violence': ViolenceDetector, 'combined': CombinedDetector}[mode]
+            detector = detector_class(**settings)
             if source != 'demo':
                 capture = cv2.VideoCapture(str(source))
                 if not capture.isOpened():
@@ -96,6 +118,8 @@ class Monitor:
                 else:
                     ok, frame = capture.read()
                     if not ok:
+                        if mode in {'violence', 'combined'} and detector.evaluations == 0:
+                            raise ValueError('Video too short for a 16-frame fighting window (about two seconds).')
                         with self.lock:
                             self.state['status'] = 'finished'
                         break
@@ -115,11 +139,26 @@ class Monitor:
                     identifier = uuid.uuid4().hex
                     filename = identifier + '.jpg'
                     (DATA / 'evidence' / filename).write_bytes(encoded.tobytes())
+                    clip = None
+                    if alert.get('clip_frames'):
+                        clip = identifier + '.avi'
+                        frames = alert['clip_frames']
+                        height, width = frames[0][1].shape[:2]
+                        writer = cv2.VideoWriter(str(DATA / 'evidence' / clip),
+                                                 cv2.VideoWriter_fourcc(*'MJPG'), alert['clip_fps'], (width, height))
+                        if not writer.isOpened():
+                            raise ValueError('Cannot write the alert evidence clip.')
+                        try:
+                            for _, clip_frame in frames:
+                                writer.write(clip_frame)
+                        finally:
+                            writer.release()
                     with database() as db:
-                        db.execute('INSERT INTO alerts (id, created, source, event, evidence, category, confidence) '
-                                   'VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        db.execute('INSERT INTO alerts (id, created, source, event, evidence, category, confidence, '
+                                   'clip, clip_start, clip_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                                    (identifier, datetime.now(timezone.utc).isoformat(), label,
-                                    alert['event'], filename, alert['category'], alert['confidence']))
+                                    alert['event'], filename, alert['category'], alert['confidence'], clip,
+                                    alert.get('clip_start'), alert.get('clip_end')))
                 with self.lock:
                     self.jpeg = encoded.tobytes()
                     self.state.update(status='monitoring', frames=index + 1, movement=movement)
@@ -154,13 +193,15 @@ def status():
 def start():
     try:
         mode = request.form.get('mode', 'motion')
-        if mode not in {'motion', 'weapons'}:
-            raise ValueError('Choose motion or weapon detection.')
+        if mode not in {'motion', 'weapons', 'violence', 'combined'}:
+            raise ValueError('Choose motion, weapon, or possible fighting detection.')
         confidence = float(request.form.get('confidence', '0.6'))
         if not 0.1 <= confidence <= 0.99:
             raise ValueError('Confidence threshold must be between 0.1 and 0.99.')
-        if mode == 'weapons':
+        if mode in {'weapons', 'combined'}:
             model_settings()
+        if mode in {'violence', 'combined'}:
+            violence_settings()
         zone = json.loads(request.form.get('zone', '[0.15,0.15,0.7,0.7]'))
         if (not isinstance(zone, list) or len(zone) != 4
                 or any(type(v) not in (int, float) or not np.isfinite(v) for v in zone)):
@@ -182,11 +223,13 @@ def start():
             upload.save(path)
             source, label = path, 'Uploaded video'
         elif source == 'demo':
+            if mode in {'violence', 'combined'}:
+                raise ValueError('Fighting detection requires a video; the motion demo is not a fighting example.')
             label = 'Synthetic demo'
         else:
             raise ValueError('Choose demo or video input.')
         settings = {'zone': zone, 'dwell': dwell, 'cooldown': cooldown, 'mode': mode}
-        if mode == 'weapons':
+        if mode in {'weapons', 'violence', 'combined'}:
             settings['confidence'] = confidence
         monitor.start(source, label, settings)
         return jsonify(ok=True)
@@ -202,7 +245,12 @@ def capabilities():
         weapons = {'configured': True, 'message': 'Model configured; inference checked when monitoring starts.'}
     except (ValueError, TypeError, OSError) as exc:
         weapons = {'configured': False, 'message': str(exc)}
-    return jsonify(motion=True, weapons=weapons, violence=False)
+    try:
+        violence_settings()
+        violence = {'configured': True, 'message': '16-frame fighting model configured; human review required.'}
+    except (ValueError, TypeError, OSError) as exc:
+        violence = {'configured': False, 'message': str(exc)}
+    return jsonify(motion=True, weapons=weapons, violence=violence)
 
 
 @app.post('/api/stop')

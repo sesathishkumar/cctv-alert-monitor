@@ -3,12 +3,21 @@ let seen = null;
 let audio = null;
 let feedConnected = false;
 $('#mode').addEventListener('change', event => {
-  $('#confidence-control').hidden = event.target.value !== 'weapons';
+  $('#confidence-control').hidden = event.target.value === 'motion';
+  $('[name="confidence"]').value = ['violence', 'combined'].includes(event.target.value) ? '0.7' : '0.6';
+  if (['violence', 'combined'].includes(event.target.value)) {
+    $('#input-source').value = 'video';
+    $('#input-source').dispatchEvent(new Event('change'));
+  }
 });
 api('/api/capabilities').then(data => {
   $('#weapons-option').disabled = !data.weapons.configured;
   $('#weapons-option').textContent = data.weapons.configured ? 'Possible guns + knives' : 'Guns + knives · model needed';
   $('#model-status').textContent = data.weapons.message;
+  $('#violence-option').disabled = !data.violence.configured;
+  $('#violence-option').textContent = data.violence.configured ? 'Possible fighting / physical violence' : 'Possible fighting · model needed';
+  $('#violence-model-status').textContent = data.violence.message;
+  $('#combined-option').disabled = !(data.weapons.configured && data.violence.configured);
 }).catch(error => {$('#model-status').textContent = error.message;});
 $('#input-source').addEventListener('change', event => {
   const upload = event.target.value === 'video';
@@ -41,8 +50,8 @@ $('#settings').addEventListener('submit', async event => {
   data.set('zone', JSON.stringify(['x','y','w','h'].map(key => Number(data.get(key))/100)));
   try {
     await api('/api/start', {method:'POST', body:data});
-    $('#message').textContent = data.get('mode') === 'weapons'
-      ? 'Weapon monitoring requested. Check status for model or input errors.'
+    $('#message').textContent = data.get('mode') !== 'motion'
+      ? 'Model monitoring requested. Fighting mode needs about two seconds of video per window and repeated detections.'
       : 'Monitoring started. Background calibration takes 20 frames.';
   } catch (error) {$('#message').textContent = error.message;}
   finally {$('#start').disabled = false;}
@@ -64,7 +73,7 @@ async function update() {
     $('#status').classList.toggle('active', active);
     $('#source-label').textContent = state.source || 'No active input';
     $('#frame-count').textContent = `${state.frames} frames processed`;
-    $('#movement').textContent = state.movement ? `${state.movement} detected regions` : 'No detected regions';
+    $('#movement').textContent = state.movement ? 'Detection candidates present' : 'No current detection candidates';
     $('#feed-label').textContent = state.status.toUpperCase();
     $('#feed-label').hidden = !state.frames;
     if (state.frames && !feedConnected) {
@@ -88,6 +97,11 @@ async function update() {
       details.append(text('h3', alert.event), text('p', alert.source),
         text('span', new Date(alert.created).toLocaleString(), 'time'));
       if (alert.confidence != null) details.append(text('p', `Model confidence: ${Math.round(alert.confidence * 100)}% · human review required`));
+      if (alert.clip) {
+        const clip = text('a', `Download evidence clip · ${alert.clip_start.toFixed(1)}–${alert.clip_end.toFixed(1)}s`);
+        clip.href = `/evidence/${alert.clip}`; clip.setAttribute('download', '');
+        details.append(clip);
+      }
       row.append(details);
       if (alert.acknowledged) row.append(text('span', '✓ Acknowledged', 'reviewed'));
       else {

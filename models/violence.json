@@ -1,0 +1,15 @@
+{
+  "format": "torchvision-mc3_18-binary",
+  "sequence_length": 16,
+  "classes": [
+    "fight",
+    "noFight"
+  ],
+  "sha256": "8268694ade4c0e79a1c5fa41a4f3c21129082d75fac9eb7c25e5a0eabad49bfa",
+  "upstream_commit": "a27adffec6651c10639b5b453e0df8564b9be298",
+  "upstream_path": "Models/model_16_m3_0.8888.pth",
+  "upstream_repository": "MohamedSebaie/Fight_Detection_From_Surveillance_Cameras-PyTorch_Project",
+  "license": "MIT",
+  "sample_fps": 8,
+  "inference_stride": 8
+}

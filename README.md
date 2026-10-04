@@ -40,9 +40,39 @@ Checks cover detection duration, cooldown, movement outside the zone, invalid se
 
 This version processes one demo or uploaded video at a time. It has no RTSP input or authentication, and is not ready for an operational police/security deployment. Human review is required for alerts. Measure false alarms and missed events on footage from the intended cameras before relying on it.
 
+## Possible fighting / physical violence detection
+
+A pretrained temporal classifier processes 16-frame video windows, using torchvision's `mc3_18` architecture and the source model's `fight`/`noFight` labels. This is separate from motion detection. It does not infer anger, emotion or intent, identify aggressors, or detect every type of violence.
+
+Install the optional CPU runtime and download the checksum-verified model:
+
+```sh
+.venv/bin/python -m pip install --index-url https://download.pytorch.org/whl/cpu -r requirements-violence.txt
+.venv/bin/python scripts/download_violence_model.py
+.venv/bin/python app.py
+```
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --index-url https://download.pytorch.org/whl/cpu -r requirements-violence.txt
+.\.venv\Scripts\python.exe scripts\download_violence_model.py
+.\.venv\Scripts\python.exe app.py
+```
+
+Choose **Possible fighting / physical violence** and upload a video, or **Weapons + possible fighting** to run both models on the same feed. Combined mode uses the selected confidence threshold for both models. Install the weapon model too before choosing combined mode. The synthetic rectangle demo is rejected for fighting/combined modes.
+
+Frames are sampled at up to 8 per source-video second; 16-frame windows are classified every 8 samples. Two consecutive high-score windows and the configured minimum duration are required for an alert. At normal frame rates the first decision needs about two seconds of footage, and repeated-window confirmation requires about another second. Videos too short for even one window report an explicit error. CPU analysis can make playback slower than the source; no source frames are silently skipped from reading.
+
+Each possible-fighting alert stores a snapshot, confidence, source timestamps, and a downloadable 16-frame AVI evidence clip from the model's window. It includes no audio or future frames. AVI is a downloadable review artifact rather than guaranteed browser-playable video. Acknowledgment marks it as reviewed. Evidence persists in the existing local database/storage and is not uploaded to GitHub or sent to authorities.
+
+The pretrained checkpoint loads as tensor weights only, is pinned to its source commit and SHA-256, and is excluded from Git. Its source's MIT license and attribution are in `models/LICENSE.violence` and `models/VIOLENCE_NOTICE.md`. `VIOLENCE_MODEL_PATH` and `VIOLENCE_MANIFEST_PATH` can override local paths for a compatible model.
+
+Validation distinguishes actual checkpoint loading and blank-video inference from fixed-score tests of alert timing, confirmation, cooldown, evidence decoding, and acknowledgment. The author's demonstration-video host was blocked by the cloud network, so positive recognition accuracy has not been tested on that clip or on the user's CCTV. Sports, staged fights, rough play and unusual motion may cause false alerts; obscured or distant fighting may be missed. Camera-specific validation remains necessary.
+
 ## Gun and knife detection
 
-Weapon mode supports separate **possible gun** and **possible knife** alerts, annotated bounding boxes, model confidence scores, per-category duration and cooldown, evidence and acknowledgment. It runs independently of motion, so a stationary visible weapon can be detected. A weapon's bounding-box center must lie inside the configured zone. This identifies visible objects; it does not associate a weapon with a particular person or establish that someone is carrying it. Violence detection is not implemented.
+Weapon mode supports separate **possible gun** and **possible knife** alerts, annotated bounding boxes, model confidence scores, per-category duration and cooldown, evidence and acknowledgment. It runs independently of motion, so a stationary visible weapon can be detected. A weapon's bounding-box center must lie inside the configured zone. This identifies visible objects; it does not associate a weapon with a particular person or establish that someone is carrying it. Possible fighting / physical violence detection is available as a separate temporal model; see below.
 
 A compatible pretrained model is now configured from the GitHub source supplied by the user. Its embedded classes are `guns` and `knife`. Install the pinned, checksum-verified weights after cloning:
 

@@ -86,7 +86,7 @@ def test_unconfigured_mode_is_explicitly_unavailable(client, monkeypatch, tmp_pa
     monkeypatch.delenv('WEAPON_MANIFEST_PATH', raising=False)
     response = client.get('/api/capabilities')
     assert response.json['weapons']['configured'] is False
-    assert response.json['violence'] is False
+    assert isinstance(response.json['violence']['configured'], bool)
     response = client.post('/api/start', data={'mode': 'weapons'})
     assert response.status_code == 400
     assert 'WEAPON_MODEL_PATH' in response.json['error']
